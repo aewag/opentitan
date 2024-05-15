@@ -20,15 +20,14 @@
 status_t handle_crypto_fi_shadow_reg_read(ujson_t *uj);
 
 /**
- * Shadow Register Write FI test.
+ * Shadow Register Access FI test.
  *
- * In this test, faults are injected when writing to the AES and KMAC shadow
- * registers.
+ * In this test, faults are injected when accessing KMAC shadow registers.
  *
  * @param uj An initialized uJSON context.
  * @return OK or error.
  */
-status_t handle_crypto_fi_shadow_reg_write(ujson_t *uj);
+status_t handle_crypto_fi_shadow_reg_access(ujson_t *uj);
 
 /**
  * KMAC FI test.

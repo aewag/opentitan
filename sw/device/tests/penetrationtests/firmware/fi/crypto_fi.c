@@ -213,75 +213,24 @@ status_t handle_crypto_fi_shadow_reg_read(ujson_t *uj) {
   return OK_STATUS();
 }
 
-status_t handle_crypto_fi_shadow_reg_write(ujson_t *uj) {
+#define SHADOW_REG_ACCESS(shadow_reg_addr, tmp)  \
+    abs_mmio_write32_shadowed(shadow_reg_addr, tmp); \
+    tmp = abs_mmio_read32(shadow_reg_addr);
+
+#define SHADOW_REG_ACCESS_10(shadow_reg_addr, tmp) \
+    SHADOW_REG_ACCESS(shadow_reg_addr, tmp) SHADOW_REG_ACCESS(shadow_reg_addr, tmp) \
+    SHADOW_REG_ACCESS(shadow_reg_addr, tmp) SHADOW_REG_ACCESS(shadow_reg_addr, tmp) \
+    SHADOW_REG_ACCESS(shadow_reg_addr, tmp) SHADOW_REG_ACCESS(shadow_reg_addr, tmp) \
+    SHADOW_REG_ACCESS(shadow_reg_addr, tmp) SHADOW_REG_ACCESS(shadow_reg_addr, tmp) \
+    SHADOW_REG_ACCESS(shadow_reg_addr, tmp) SHADOW_REG_ACCESS(shadow_reg_addr, tmp)
+
+status_t handle_crypto_fi_shadow_reg_access(ujson_t *uj) {
   // Clear registered alerts in alert handler.
   sca_registered_alerts_t reg_alerts = sca_get_triggered_alerts();
 
   crypto_fi_test_result_mult_t uj_output;
 
-  // Initialize AES and KMAC with the default values.
-  uint32_t ctrl_reg_aes_init = AES_CTRL_SHADOWED_REG_RESVAL;
-  ctrl_reg_aes_init =
-      bitfield_field32_write(ctrl_reg_aes_init, AES_CTRL_SHADOWED_KEY_LEN_FIELD,
-                             AES_CTRL_SHADOWED_KEY_LEN_VALUE_AES_128);
-  ctrl_reg_aes_init =
-      bitfield_field32_write(ctrl_reg_aes_init, AES_CTRL_SHADOWED_MODE_FIELD,
-                             AES_CTRL_SHADOWED_MODE_VALUE_AES_ECB);
-  ctrl_reg_aes_init = bitfield_field32_write(
-      ctrl_reg_aes_init, AES_CTRL_SHADOWED_PRNG_RESEED_RATE_FIELD,
-      AES_CTRL_SHADOWED_PRNG_RESEED_RATE_VALUE_PER_64);
-  ctrl_reg_aes_init = bitfield_bit32_write(
-      ctrl_reg_aes_init, AES_CTRL_SHADOWED_SIDELOAD_BIT, true);
-  ctrl_reg_aes_init = bitfield_field32_write(
-      ctrl_reg_aes_init, AES_CTRL_SHADOWED_OPERATION_FIELD,
-      AES_CTRL_SHADOWED_OPERATION_VALUE_AES_DEC);
-  ctrl_reg_aes_init = bitfield_bit32_write(
-      ctrl_reg_aes_init, AES_CTRL_SHADOWED_MANUAL_OPERATION_BIT, true);
-  abs_mmio_write32_shadowed(
-      TOP_EARLGREY_AES_BASE_ADDR + AES_CTRL_SHADOWED_REG_OFFSET,
-      ctrl_reg_aes_init);
-  aes_spin_until(AES_STATUS_IDLE_BIT);
-
-  uint32_t ctrl_reg_kmac_init = KMAC_CFG_SHADOWED_REG_RESVAL;
-  ctrl_reg_kmac_init = bitfield_bit32_write(
-      ctrl_reg_kmac_init, KMAC_CFG_SHADOWED_MSG_ENDIANNESS_BIT, 0);
-  ctrl_reg_kmac_init = bitfield_bit32_write(
-      ctrl_reg_kmac_init, KMAC_CFG_SHADOWED_STATE_ENDIANNESS_BIT, 0);
-  ctrl_reg_kmac_init = bitfield_bit32_write(ctrl_reg_kmac_init,
-                                            KMAC_CFG_SHADOWED_SIDELOAD_BIT, 0);
-  ctrl_reg_kmac_init = bitfield_bit32_write(
-      ctrl_reg_kmac_init, KMAC_CFG_SHADOWED_ENTROPY_FAST_PROCESS_BIT, 1);
-  ctrl_reg_kmac_init = bitfield_bit32_write(ctrl_reg_kmac_init,
-                                            KMAC_CFG_SHADOWED_MSG_MASK_BIT, 0);
-  ctrl_reg_kmac_init = bitfield_bit32_write(
-      ctrl_reg_kmac_init, KMAC_CFG_SHADOWED_ENTROPY_READY_BIT, 1);
-  ctrl_reg_kmac_init = bitfield_bit32_write(
-      ctrl_reg_kmac_init, KMAC_CFG_SHADOWED_ERR_PROCESSED_BIT, 0);
-  ctrl_reg_kmac_init = bitfield_bit32_write(
-      ctrl_reg_kmac_init, KMAC_CFG_SHADOWED_EN_UNSUPPORTED_MODESTRENGTH_BIT, 0);
-  abs_mmio_write32_shadowed(
-      TOP_EARLGREY_KMAC_BASE_ADDR + KMAC_CFG_SHADOWED_REG_OFFSET,
-      ctrl_reg_kmac_init);
-
-  // Values we want to write into the AES and KMAC shadow registers during FI.
-  uint32_t ctrl_reg_aes = AES_CTRL_SHADOWED_REG_RESVAL;
-  ctrl_reg_aes =
-      bitfield_field32_write(ctrl_reg_aes, AES_CTRL_SHADOWED_KEY_LEN_FIELD,
-                             AES_CTRL_SHADOWED_KEY_LEN_VALUE_AES_192);
-  ctrl_reg_aes =
-      bitfield_field32_write(ctrl_reg_aes, AES_CTRL_SHADOWED_MODE_FIELD,
-                             AES_CTRL_SHADOWED_MODE_VALUE_AES_CFB);
-  ctrl_reg_aes = bitfield_field32_write(
-      ctrl_reg_aes, AES_CTRL_SHADOWED_PRNG_RESEED_RATE_FIELD,
-      AES_CTRL_SHADOWED_PRNG_RESEED_RATE_VALUE_PER_1);
-  ctrl_reg_aes =
-      bitfield_bit32_write(ctrl_reg_aes, AES_CTRL_SHADOWED_SIDELOAD_BIT, false);
-  ctrl_reg_aes =
-      bitfield_field32_write(ctrl_reg_aes, AES_CTRL_SHADOWED_OPERATION_FIELD,
-                             AES_CTRL_SHADOWED_OPERATION_VALUE_AES_ENC);
-  ctrl_reg_aes = bitfield_bit32_write(
-      ctrl_reg_aes, AES_CTRL_SHADOWED_MANUAL_OPERATION_BIT, false);
-
+  // Values we want to write into the KMAC shadow registers during FI.
   uint32_t ctrl_reg_kmac = KMAC_CFG_SHADOWED_REG_RESVAL;
   ctrl_reg_kmac = bitfield_bit32_write(ctrl_reg_kmac,
                                        KMAC_CFG_SHADOWED_MSG_ENDIANNESS_BIT, 1);
@@ -300,38 +249,27 @@ status_t handle_crypto_fi_shadow_reg_write(ujson_t *uj) {
   ctrl_reg_kmac = bitfield_bit32_write(
       ctrl_reg_kmac, KMAC_CFG_SHADOWED_EN_UNSUPPORTED_MODESTRENGTH_BIT, 1);
 
+  uint32_t ctrl_reg_kmac_addr = TOP_EARLGREY_KMAC_BASE_ADDR +
+                                KMAC_CFG_SHADOWED_REG_OFFSET;
+
   sca_set_trigger_high();
   asm volatile(NOP10);
-  // Write AES and KMAC shadow registers.
-  abs_mmio_write32_shadowed(
-      TOP_EARLGREY_AES_BASE_ADDR + AES_CTRL_SHADOWED_REG_OFFSET, ctrl_reg_aes);
-  abs_mmio_write32_shadowed(
-      TOP_EARLGREY_KMAC_BASE_ADDR + KMAC_CFG_SHADOWED_REG_OFFSET,
-      ctrl_reg_kmac);
-
-  uj_output.result[0] = aes_spin_until(AES_STATUS_IDLE_BIT);
+  SHADOW_REG_ACCESS_10(ctrl_reg_kmac_addr, ctrl_reg_kmac)
+  SHADOW_REG_ACCESS_10(ctrl_reg_kmac_addr, ctrl_reg_kmac)
+  SHADOW_REG_ACCESS_10(ctrl_reg_kmac_addr, ctrl_reg_kmac)
   asm volatile(NOP10);
   sca_set_trigger_low();
 
   // Get registered alerts from alert handler.
   reg_alerts = sca_get_triggered_alerts();
 
-  // Read back AES and KMAC shadow registers.
-  uint32_t ctrl_reg_aes_read = abs_mmio_read32(TOP_EARLGREY_AES_BASE_ADDR +
-                                               AES_CTRL_SHADOWED_REG_OFFSET);
-
-  uj_output.result[1] = 0;
-  if (ctrl_reg_aes_read != ctrl_reg_aes) {
-    uj_output.result[1] = ctrl_reg_aes_read;
-  }
-
+  // Read back KMAC shadow registers.
   uint32_t ctrl_reg_kmac_read = abs_mmio_read32(TOP_EARLGREY_KMAC_BASE_ADDR +
                                                 KMAC_CFG_SHADOWED_REG_OFFSET);
-
+  uj_output.result[0] = ctrl_reg_kmac_read;
+  // Zeroize unused
+  uj_output.result[1] = 0;
   uj_output.result[2] = 0;
-  if (ctrl_reg_kmac_read != ctrl_reg_kmac) {
-    uj_output.result[2] = ctrl_reg_kmac_read;
-  }
 
   memcpy(uj_output.alerts, reg_alerts.alerts, sizeof(reg_alerts.alerts));
   RESP_OK(ujson_serialize_crypto_fi_test_result_mult_t, uj, &uj_output);
@@ -513,8 +451,8 @@ status_t handle_crypto_fi(ujson_t *uj) {
       return handle_crypto_fi_aes(uj);
     case kCryptoFiSubcommandKmac:
       return handle_crypto_fi_kmac(uj);
-    case kCryptoFiSubcommandShadowRegWrite:
-      return handle_crypto_fi_shadow_reg_write(uj);
+    case kCryptoFiSubcommandShadowRegAccess:
+      return handle_crypto_fi_shadow_reg_access(uj);
     case kCryptoFiSubcommandShadowRegRead:
       return handle_crypto_fi_shadow_reg_read(uj);
     default:
